@@ -1,0 +1,9 @@
+[Interface]
+Address=10.66.{{ hostvars[groups['hub'][0]]['network'] }}.{{ id }}
+PrivateKey={{ wg_key }}
+
+[Peer]
+PublicKey={{ hostvars[groups['hub'][0]]['public_key']['stdout'] }}
+# AllowedIPs=10.66.{{ hostvars[groups['hub'][0]]['network'] }}.0/24
+AllowedIPs=10.66.{{ hostvars[groups['hub'][0]]['network'] }}.1/32
+Endpoint={{ hostvars[groups['hub'][0]]['public_ip']['stdout'] }}:1194

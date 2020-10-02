@@ -1,0 +1,158 @@
+---
+- hosts: hub
+  become: yes
+  tasks:
+    - name: install wireguard
+      apt:
+        name: wireguard
+        state: latest
+        update_cache: yes
+
+    - name: enable ipv4 forwarding
+      lineinfile:
+        dest: /etc/sysctl.d/99-sysctl.conf
+        line: net.ipv4.ip_forward=1
+
+    - name: install ufw
+      apt:
+        name: ufw
+        state: latest
+        update_cache: yes
+
+    - name: Enable UFW
+      ufw:
+        state: enabled
+
+    - name: Set logging
+      ufw:
+        logging: 'on'
+
+    - name: Allow all access to udp port 1194
+      ufw:
+        rule: allow
+        port: '1194'
+        proto: udp
+        
+    - name: Allow all access to tcp port 22
+      ufw:
+        rule: allow
+        port: '22'
+        proto: tcp
+
+    - name: check for existing wireguard key
+      shell: wg show
+      register: wg_check
+
+    - name: generate new wiregurd key
+      when: wg_check.stdout  == ""
+      shell: wg genkey
+      register: wg_key
+
+    - name: copy upstart script
+      when: wg_check.stdout  == ""
+      template: 
+        src: templates/wg0.conf.hub.j2
+        dest: "/etc/wireguard/wg0.conf"
+
+    - name: get wireguard private key
+      when: wg_check.stdout  != ""
+      shell: wg show wg0 private-key
+      register: wg_key
+
+    - name: start wireguard
+      systemd:
+        state: started
+        name: wg-quick@wg0
+
+    - name: enable wireguard
+      systemd:
+        enabled: yes
+        name: wg-quick@wg0
+
+    - name: get wireguard public key
+      shell: wg show wg0 public-key
+      register: public_key
+
+    - name: get hub public ip
+      shell: curl ipinfo.io/ip
+      register: public_ip
+
+- hosts: spoke
+  become: yes
+  tasks:
+    - name: install wireguard
+      apt:
+        name: wireguard
+        state: latest
+        update_cache: yes
+
+    - name: check for existing wireguard key
+      shell: wg show wg0 private-key
+      ignore_errors: True
+      register: wg_check
+
+    - name: generate new wiregurd key
+      when: (wg_check.stdout  == "") or 
+            (wg_check.stdout  == "(none)") or
+            (wg_check.rc != 0)
+      shell: wg genkey
+      register: new_wg_key
+
+    - name: get wireguard private key
+      when: new_wg_key is skipped
+      shell: wg show wg0 private-key
+      register: old_wg_key
+
+    - set_fact:
+        wg_key: "{{ new_wg_key.stdout }}"
+      when: old_wg_key is skipped
+
+    - set_fact:
+        wg_key: "{{ old_wg_key.stdout }}"
+      when: new_wg_key is skipped
+    
+    - name: copy upstart script
+      template: 
+        src: templates/wg0.conf.spoke.j2
+        dest: "/etc/wireguard/wg0.conf"
+
+    - name: start wireguard
+      systemd:
+        state: started
+        name: wg-quick@wg0
+
+    - name: start wireguard
+      systemd:
+        enabled: yes
+        name: wg-quick@wg0
+
+    - name: restart wireguard
+      systemd:
+        state: restarted
+        name: wg-quick@wg0
+
+    - name: get wireguard public key
+      shell: wg show wg0 public-key
+      register: public_key
+
+- hosts: hub
+  become: yes
+  tasks:
+    - name: get wireguard private key
+      when: wg_check.stdout  != ""
+      shell: wg show wg0 private-key
+      register: wg_key
+
+    - name: get wireguard public key
+      shell: wg show wg0 public-key
+      register: public_key
+    
+    - name: copy upstart script
+      template: 
+        src: templates/wg0.conf.hub.j2
+        dest: "/etc/wireguard/wg0.conf"
+
+    - name: restart wireguard
+      systemd:
+        state: restarted
+        name: wg-quick@wg0

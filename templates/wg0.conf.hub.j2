@@ -1,0 +1,17 @@
+[Interface]
+Address=10.66.{{ network }}.1
+ListenPort=1194
+PrivateKey={{ wg_key.stdout }}
+PostUp=logger -t wireguard 'Tunnel WireGuard-wg0 started'
+PostUp=iptables -t nat -A POSTROUTING -s 10.66.{{ network }}.0/24 -o br0 -j MASQUERADE
+PostDown=logger -t wireguard 'Tunnel WireGuard-wg0 stopped'
+PostDown=iptables -t nat -D POSTROUTING -s 10.66.{{ network }}.0/24 -o br0 -j MASQUERADE
+
+
+{% for peer in groups['spoke'] %}
+    {% if 'public_key' in hostvars[peer] %}
+    [Peer]
+    PublicKey={{ hostvars[peer]['public_key']['stdout'] }}
+    AllowedIPs=10.66.{{ network }}.{{ hostvars[peer]['id'] }}
+    {% endif %}
+{% endfor %}
